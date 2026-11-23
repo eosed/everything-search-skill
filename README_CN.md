@@ -9,6 +9,8 @@
 - **丰富过滤**：文件名、扩展名、路径、正则、整词、大小写、全路径匹配、词首/词尾
 - **分页与总数**：`--offset` / `--total` 应付大批结果
 - **机器可读输出**：`json` / `csv` / `tsv`，或直接导出文件
+- **直接看命中内容**（`-x`）：解析命中的 xlsx/docx/pptx/pdf/txt，打印具体行/单元格/段落，不依赖 openpyxl
+- **一站式查人**（`--person`）：按姓名检索并抽出 8 位工号，按出现次数排序
 - **自带 es.exe**：`scripts/es.exe` 随技能打包，无需另装
 
 ## 系统要求
@@ -42,6 +44,12 @@ python scripts/search.py -e pdf -n 50 --offset 50 --json
 
 # 导出
 python scripts/search.py -q 谭超群 -e docx --format csv --export out.csv
+
+# 检索后直接看命中的那一行/格
+python scripts/search.py -c 范静雅 -e xlsx -x -m 2
+
+# 一站式查某人的工号
+python scripts/search.py --person 孙涛
 ```
 
 ## 参数说明
@@ -67,6 +75,11 @@ python scripts/search.py -q 谭超群 -e docx --format csv --export out.csv
 | `--format` | text（默认）/ json / csv / tsv |
 | `-j/--json` | 等价 `--format json` |
 | `--export` | 结果写入文件 |
+| `-x/--extract` | 解析命中的文件，打印命中行/单元格（xlsx/docx/pptx/pdf/txt） |
+| `--context` | 每处命中截取的字符数，默认 60 |
+| `-m/--max-hits` | 每个文件最多输出几处命中，默认 3 |
+| `-b/--brief` | 只打命中内容，不打表头 |
+| `--person` | 一站式查人：检索 + 花名册文件名兜底，抽 8 位工号并按次数排序 |
 
 ## 注意事项（都是实测踩出来的坑）
 
@@ -77,6 +90,8 @@ python scripts/search.py -q 谭超群 -e docx --format csv --export out.csv
 5. `-get-result-count` 不能与 `-n` / `-viewport-*` 同用，否则返回的是本次显示条数。
 6. 支持通配符 `*` `?`，`|` 表示 OR。
 7. Everything 未运行时返回码 8。
+8. **内容索引会静默漏收部分 xlsx**。实测花名册（78 KB，远小于 20 MB 上限）没进内容索引：`content:<手机号>` 查不到，但 `花名册 ext:xlsx` 文件名检索正常。所以查人不能只靠 `content:`，`--person` 会再按「花名册/名单/人员名单/通讯录」文件名兜底捞一遍。
+9. **别用 openpyxl 遍历来路不明的 xlsx**。损坏的 `dimension`（`A1:WVS983030` 对 29 行的表假称 98 万行）会让 `iter_rows()` 吃掉约 8.2 GB 内存且永不返回，而 `load_workbook` 只占 43 MB。`extract.py` 直读 zip、只认真实存在的 `<row>`，单部件上限 64 MB。
 
 ## 为什么不用 `dir /s`？
 

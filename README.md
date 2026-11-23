@@ -9,6 +9,8 @@
 - **Rich filtering**: name, extension, path, regex, whole word, case, match-path, prefix/suffix
 - **Pagination & totals**: `--offset` / `--total` for large result sets
 - **Machine-readable output**: `json` / `csv` / `tsv`, or export straight to a file
+- **Read the hit itself** (`-x`): parses the matched xlsx/docx/pptx/pdf/txt and prints the exact row/cell/paragraph, no openpyxl needed
+- **One-shot people lookup** (`--person`): finds a name, extracts the 8-digit staff ID, and ranks candidates by frequency
 - **Bundled es.exe**: `scripts/es.exe` ships with the skill, no separate download
 
 ## Requirements
@@ -42,6 +44,12 @@ python scripts/search.py -e pdf -n 50 --offset 50 --json
 
 # export
 python scripts/search.py -q 谭超群 -e docx --format csv --export out.csv
+
+# search, then read the matching row/cell directly
+python scripts/search.py -c 范静雅 -e xlsx -x -m 2
+
+# one-shot: find a person's staff ID
+python scripts/search.py --person 孙涛
 ```
 
 ## API Reference
@@ -67,6 +75,11 @@ python scripts/search.py -q 谭超群 -e docx --format csv --export out.csv
 | `--format` | text (default) / json / csv / tsv |
 | `-j/--json` | Same as `--format json` |
 | `--export` | Write results to a file |
+| `-x/--extract` | Parse each matched file and print the hit line/cell (xlsx/docx/pptx/pdf/txt) |
+| `--context` | Characters captured around each hit, default 60 |
+| `-m/--max-hits` | Max hits printed per file, default 3 |
+| `-b/--brief` | Print hits only, without headers |
+| `--person` | One-shot people lookup: search + roster filename fallback, extract 8-digit staff IDs and rank by frequency |
 
 ## Gotchas (all found the hard way)
 
@@ -77,6 +90,8 @@ python scripts/search.py -q 谭超群 -e docx --format csv --export out.csv
 5. `-get-result-count` must not be combined with `-n` / `-viewport-*`, or you get the page size back.
 6. Wildcards `*` `?`, `|` for OR.
 7. Exit code 8 means Everything is not running.
+8. **Content indexing silently misses some xlsx files.** A roster (78 KB, far under the 20 MB cap) was not content-indexed: `content:<phone>` never matched it, while `花名册 ext:xlsx` found it instantly. So `content:` alone is not enough to find people — `--person` also sweeps files by name (花名册/名单/人员名单/通讯录) as a fallback.
+9. **Never walk an untrusted xlsx with openpyxl.** A corrupted `dimension` (`A1:WVS983030` claiming 983k rows for a 29-row sheet) made `iter_rows()` allocate ~8.2 GB and never finish, while `load_workbook` used only 43 MB. `extract.py` reads the zip directly, honours only real `<row>` elements, and caps any part at 64 MB.
 
 ## Why Everything vs. `dir /s`?
 
