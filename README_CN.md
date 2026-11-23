@@ -1,5 +1,7 @@
 # Everything 搜索技能
 
+> **v2.0.0**　·　2026-11-23
+
 > 🚀 基于 Everything (es.exe) 的极速文件搜索——**按文件名**和**按文件内容**都能查
 
 ## 特性
@@ -110,3 +112,4 @@ MIT
 ## 致谢
 
 - [Everything](https://www.voidtools.com/) by voidtools
+
