@@ -1,5 +1,6 @@
 ---
 name: everything-search
+version: 2.0.0
 description: Lightning-fast file search over the local machine with Everything (filename AND file content). Use when the user wants to find files/folders by name, by extension, under a path, or by text inside documents, or asks "where is", "本地查询", "搜索文件", "找文件", "哪个文件里写了".
 ---
 
