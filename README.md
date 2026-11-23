@@ -1,6 +1,6 @@
 # Everything Search Skill
 
-> **v2.0.0**　·　2026-11-23
+> **v2.1.0**　·　2026-11-24
 
 > 🚀 Lightning-fast file search for AI agents using Everything (es.exe) — by filename **and by file content**
 
@@ -14,11 +14,18 @@
 - **Read the hit itself** (`-x`): parses the matched xlsx/docx/pptx/pdf/txt and prints the exact row/cell/paragraph, no openpyxl needed
 - **Index-independent scan** (`--scan`): walk a folder and read files directly, for what Everything's content index silently missed
 - **Bundled es.exe**: `scripts/es.exe` ships with the skill, no separate download
+- **One-command self-check & fix** (`scripts/doctor.py`): installs Everything 1.5 when missing and enables content indexing, with a single UAC prompt
 
 ## Requirements
 
 - [Everything](https://www.voidtools.com/) 1.5.x installed and running (1.4 has no `content:`)
 - For fast content search: Options → Indexes → **Enable content indexing**, and add the folders/file types you want indexed
+- Both can be automated. Run the self-check once after installing:
+
+```bash
+python scripts/doctor.py          # report
+python scripts/doctor.py --fix    # install 1.5 if missing (one UAC prompt), enable content indexing
+```
 
 ## Installation
 

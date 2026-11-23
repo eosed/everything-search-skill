@@ -41,6 +41,15 @@ def find_es():
     return shutil.which('es')
 
 
+def everything_version(es):
+    """主程序版本；连不上返回 None。es.exe 自身版本与此无关。"""
+    out, err = run([es, '-get-everything-version'])
+    if err:
+        return None
+    v = (out or '').strip()
+    return v or None
+
+
 def content_index_enabled():
     """Everything 1.5 内容索引是否开启（直接扫 ini 的 key=value，无 section）。"""
     ini = os.path.join(os.environ.get('APPDATA', ''), 'Everything', 'Everything.ini')
@@ -120,14 +129,30 @@ def run(cmd, timeout=180):
     return r.stdout or '', None
 
 
+def content_warning(es):
+    """content: 不可靠时给出可执行的替代命令；环境正常返回 None。"""
+    ver = everything_version(es)
+    if not ver:
+        return None  # 主程序没跑，run() 已经报错
+    if not ver.startswith('1.5'):
+        return ('提示: 主程序 %s 不支持 content:（需 1.5.x），内容检索请改用 --scan：\n'
+                '      python search.py --scan -p <目录> -c <关键词>\n' % ver)
+    if content_index_enabled() is False:
+        return ('提示: 内容索引未开启（content_indexing_enabled=0），content: 只能按需扫描，慢且可能返回空。\n'
+                '      开启见 SKILL.md，或改用 --scan：python search.py --scan -p <目录> -c <关键词>\n')
+    return None
+
+
 def search(a):
     es = find_es()
     if not es:
         return {'error': 'es.exe 未找到（应有 scripts/es.exe，或 C:\\Program Files\\Everything\\es.exe）'}
     if not (a.query or a.content or a.ext or a.path):
         return {'error': '至少给出 --query / --content / --ext / --path 之一'}
-    if a.content and content_index_enabled() is False:
-        sys.stderr.write('提示: 内容索引未开启（content_indexing_enabled=0），content: 查询会很慢或返回空。\n')
+    if a.content:
+        warn = content_warning(es)
+        if warn:
+            sys.stderr.write(warn)
 
     if a.export:
         cmd = build_cmd(es, a) + ['-export-' + a.format, a.export]

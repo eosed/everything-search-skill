@@ -1,6 +1,6 @@
 ---
 name: everything-search
-version: 2.0.0
+version: 2.1.0
 description: Lightning-fast file search over the local machine with Everything (filename AND file content). Use when the user wants to find files/folders by name, by extension, under a path, or by text inside documents, or asks "where is", "本地查询", "搜索文件", "找文件", "哪个文件里写了".
 ---
 
@@ -10,9 +10,18 @@ description: Lightning-fast file search over the local machine with Everything (
 
 ## 前置条件
 
-- Everything 主程序必须在运行（`C:\Program Files\Everything\Everything.exe`，需 1.5.x 才有 `content:`）。
-- `es.exe` 已随本技能打包在 `scripts/es.exe`（1.1.1.40），无需另装。
-- **内容检索**要快，必须在 Everything 里开启内容索引：Options → Indexes → Enable content indexing（ini 里 `content_indexing_enabled=1`），并指定要索引的目录与文件类型。未开启时 `content:` 走按需扫描，能出结果但很慢，且不带 `--path`/`--ext` 收窄容易超时返回空。
+**装好先自检，缺什么一条命令补齐：**
+
+```bash
+python scripts/doctor.py           # 只体检，列出缺什么
+python scripts/doctor.py --fix     # 缺 1.5 就装、没开内容索引就开
+python scripts/doctor.py --fix --index-path "F:\" --index-path "D:\资料"
+```
+
+- Everything **主程序**必须在运行，且需 **1.5.x** 才有 `content:`。缺 1.5 时 `--fix` 按本机架构（x64/x86/ARM64）从 voidtools 官方下载并静默安装，**只弹一次 UAC，点「是」即可**，其余全自动。
+- `es.exe` 已随本技能打包在 `scripts/es.exe`（1.1.1.40），无需另装。它是客户端，本身没有 1.5 版。
+- **内容检索**要快必须开启内容索引（ini 里 `content_indexing_enabled=1`）。`--fix` 会直接改 ini 并重启服务；已有的索引目录与文件类型不会被覆盖。未开启时 `content:` 走按需扫描，能出结果但很慢，且不带 `--path`/`--ext` 收窄容易超时返回空。
+- 自检不过时，`search.py` 在 `-c` 模式下会往 stderr 打提示，指向 `--scan` 或开启索引，不会静默返回空。
 
 ## 调用
 

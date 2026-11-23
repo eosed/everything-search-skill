@@ -1,6 +1,6 @@
 # Everything 搜索技能
 
-> **v2.0.0**　·　2026-11-23
+> **v2.1.0**　·　2026-11-24
 
 > 🚀 基于 Everything (es.exe) 的极速文件搜索——**按文件名**和**按文件内容**都能查
 
@@ -14,11 +14,18 @@
 - **直接看命中内容**（`-x`）：解析命中的 xlsx/docx/pptx/pdf/txt，打印具体行/单元格/段落，不依赖 openpyxl
 - **绕过索引直扫**（`--scan`）：遍历目录直接读文件，专治内容索引漏收
 - **自带 es.exe**：`scripts/es.exe` 随技能打包，无需另装
+- **一键自检修复**（`scripts/doctor.py`）：缺 1.5 主程序自动下载安装、内容索引没开自动开启，只需点一次 UAC 确认
 
 ## 系统要求
 
 - 已安装并运行 [Everything](https://www.voidtools.com/) 1.5.x（1.4 没有 `content:`）
 - 想快速内容检索：Options → Indexes → 勾选 **Enable content indexing**，并加入要索引的目录与文件类型
+- 以上两项都能自动搞定，装好后先跑一次自检：
+
+```bash
+python scripts/doctor.py          # 体检，列出缺什么
+python scripts/doctor.py --fix    # 缺 1.5 就装（弹一次 UAC），索引没开就开
+```
 
 ## 安装
 
