@@ -13,7 +13,6 @@ import argparse
 import concurrent.futures
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +29,8 @@ if sys.platform == 'win32':
 HERE = os.path.dirname(os.path.abspath(__file__))
 SORTS = ('name', 'path', 'size', 'extension', 'date-created', 'date-modified',
          'date-accessed', 'date-recently-changed')
+# --scan 未指定 -e 时默认扫这些类型（extract.py 能解析的）
+SCAN_EXT = 'xlsx;xlsm;docx;pptx;pdf;txt;md;csv;json;log;xml;ini;yml;yaml;py;js;ts;html;sql'
 
 
 def find_es():
@@ -190,55 +191,25 @@ def search(a):
     return res
 
 
-ID_RE = re.compile(r'(?<!\d)(20\d{6})(?!\d)')
-# 内容索引漏收的台账类文件，靠文件名兜底捞回来
-ROSTER_PATTERNS = ('花名册', '名单', '人员名单', '通讯录')
+def walk_files(root, exts):
+    """递归列出 root 下扩展名匹配的文件。exts 形如 'docx;pdf'，空则全要。"""
+    want = {('.' + e.strip().lstrip('.').lower()) for e in (exts or '').split(';') if e.strip()}
+    out = []
+    for dirpath, _, names in os.walk(root):
+        for n in names:
+            if not want or os.path.splitext(n)[1].lower() in want:
+                out.append(os.path.join(dirpath, n))
+    return out
 
 
-def person_lookup(name, path=None, limit=40, ext='xlsx;docx'):
-    """一站式查人：检索 -> 去重 -> 并行提取 -> 抽出 8 位工号候选并统计。
-
-    一次进程内跑完整条链路，避免多次往返。返回 {'name','files','candidates'}。
-    """
-    import argparse as _ap
-    ns = _ap.Namespace(
-        query='', content=name, path=path, ext=ext, max_results=limit,
-        offset=0, total=False, folders=False, files_only=True, sort_by=None,
-        desc=False, case=False, whole_word=False, match_path=False, prefix=False,
-        suffix=False, ignore_punctuation=False, format='text', json_alias=False,
-        export=None, extract=True, context=40, max_hits=2, brief=True,
-        regex=False)
-    res = search(ns)
-    if 'error' in res:
-        return {'error': res['error']}
-    paths = list(res.get('paths', []))
-    # 内容索引对花名册类 xlsx 有盲区（实测 content:手机号 查不到），
-    # 用文件名再捞一遍名册/名单类文件做兜底
-    def _key(p):
-        return (os.path.basename(p), os.path.getsize(p) if os.path.isfile(p) else 0)
-    seen_file = set(_key(p) for p in paths)
-    for pat in ROSTER_PATTERNS:
-        ns.query, ns.content = pat, ''
-        for p in search(ns).get('paths', []):
-            k = _key(p)
-            if k not in seen_file:
-                seen_file.add(k)
-                paths.append(p)
+def collect_hits(paths, terms, a):
+    """并行解析一批文件，返回 [{'file','kind','hits'}]，只保留有命中的。"""
     if extract_hits is None or not paths:
-        return {'name': name, 'files': 0, 'candidates': []}
+        return []
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(paths))) as ex:
-        parsed = list(ex.map(lambda p: extract_hits(p, [name], 40, 2), paths))
-    tally = {}
-    for p, (kind, hits) in zip(paths, parsed):
-        for loc, snip in hits:
-            for cid in ID_RE.findall(snip):
-                rec = tally.setdefault(cid, {'id': cid, 'count': 0, 'files': []})
-                rec['count'] += 1
-                base = os.path.basename(p)
-                if base not in rec['files']:
-                    rec['files'].append(base)
-    cands = sorted(tally.values(), key=lambda r: (-r['count'], r['id']))
-    return {'name': name, 'files': len(paths), 'candidates': cands}
+        parsed = list(ex.map(lambda p: extract_hits(p, terms, a.context, a.max_hits), paths))
+    return [{'file': p, 'kind': kind, 'hits': hits}
+            for p, (kind, hits) in zip(paths, parsed) if hits]
 
 
 def main():
@@ -271,34 +242,64 @@ def main():
     p.add_argument('--context', type=int, default=60, help='--extract 时上下文长度，默认 60 字符')
     p.add_argument('--max-hits', '-m', type=int, default=3, help='--extract 时每个文件最多显示几处命中，默认 3')
     p.add_argument('--brief', '-b', action='store_true', help='只输出命中内容，省略表头与文件列表')
-    p.add_argument('--person', help='一站式查人：给出姓名，自动检索+提取+抽出 8 位工号候选并按出现次数排序')
+    p.add_argument('--scan', action='store_true',
+                   help='不依赖 Everything 内容索引，直接遍历 -p 目录（默认当前目录）读文件找内容；慢但不受索引盲区影响')
     a = p.parse_args()
     if a.json_alias:
         a.format = 'json'
 
-    if a.person:
-        out = person_lookup(a.person, a.path, a.max_results, a.ext or 'xlsx;docx')
-        if 'error' in out:
-            print('错误: %s' % out['error'])
+    # --scan：不依赖 Everything 内容索引，直接遍历目录读文件（索引漏收时的兜底）
+    if a.scan:
+        root = a.path or '.'
+        if not os.path.isdir(root):
+            print('错误: --scan 需要一个目录（用 -p 指定，或当前目录）')
             sys.exit(1)
-        print('姓名: %s  解析文件: %d' % (out['name'], out['files']))
-        if not out['candidates']:
-            print('未在命中文件中找到 8 位工号')
+        terms = [t for t in (a.query, a.content) if t]
+        if not terms:
+            print('错误: --scan 需要 -q 或 -c 作为检索词')
+            sys.exit(1)
+        if extract_hits is None:
+            print('错误: 找不到 extract.py，无法解析文件')
+            sys.exit(1)
+        paths = walk_files(root, a.ext or SCAN_EXT)
+        hits = collect_hits(paths, terms, a)
+        if a.format == 'json' or a.json_alias:
+            print(json.dumps({'root': root, 'scanned': len(paths), 'extracts': hits},
+                             ensure_ascii=False, indent=2))
             return
-        for r in out['candidates'][:8]:
-            print('  %s  出现 %d 次  %s' % (r['id'], r['count'], ' / '.join(r['files'][:2])))
+        if not a.brief:
+            print('扫描 %d 个文件，命中 %d 个:' % (len(paths), len(hits)))
+        for h in hits:
+            print('\n%s  [%s]' % (os.path.basename(h['file']), h['kind']))
+            for loc, snip in h['hits']:
+                print('  [%s] %s' % (loc, snip))
         return
 
     res = search(a)
-    if a.format == 'json' or a.json_alias:
-        print(json.dumps(res, ensure_ascii=False, indent=2))
-        return
     if 'error' in res:
         print('错误: %s' % res['error'])
         sys.exit(1)
     if 'exported' in res:
         print('已导出到 %s' % res['exported'])
         return
+
+    hits = []
+    if a.extract:
+        terms = [t for t in (a.query, a.content) if t]
+        if not terms:
+            print('错误: --extract 需要 --query 或 --content 作为检索词')
+            sys.exit(1)
+        if extract_hits is None:
+            print('错误: 找不到 extract.py，无法提取内容')
+            sys.exit(1)
+        hits = collect_hits(res.get('paths', []), terms, a)
+
+    if a.format == 'json' or a.json_alias:
+        if a.extract:
+            res['extracts'] = hits
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return
+
     if a.brief:
         pass
     elif a.extract:
@@ -314,24 +315,11 @@ def main():
             print(ln)
 
     if a.extract:
-        if extract_hits is None:
-            print('\n错误: 找不到 extract.py，无法提取内容')
-            sys.exit(1)
-        terms = [t for t in (a.query, a.content) if t]
-        if not terms:
-            print('\n提示: --extract 需要 --query 或 --content 作为检索词')
-            return
         if not a.brief:
             print('\n== 命中内容 ==')
-        paths = res.get('paths', [])
-        # 并行解析：读文件是 I/O + 解压，线程池足够，顺序保持不变
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(paths) or 1)) as ex:
-            parsed = list(ex.map(lambda p: extract_hits(p, terms, a.context, a.max_hits), paths))
-        for path, (kind, hits) in zip(paths, parsed):
-            if not hits:
-                continue
-            print('\n%s  [%s]' % (os.path.basename(path), kind))
-            for loc, snip in hits:
+        for h in hits:
+            print('\n%s  [%s]' % (os.path.basename(h['file']), h['kind']))
+            for loc, snip in h['hits']:
                 print('  [%s] %s' % (loc, snip))
 
 if __name__ == '__main__':
